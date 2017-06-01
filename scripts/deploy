@@ -1,0 +1,65 @@
+#!/bin/sh
+
+. init.sh
+
+PACKAGING=war
+
+# Initialize parameters specified from command line
+while getopts ":w:r:u:p:" o; do
+	case "${o}" in
+		w)
+			WEBAPP_NAME=${OPTARG}
+			;;
+		r)
+			RESOURCE_GROUP=${OPTARG}
+			;;			
+		u)
+			URL=${OPTARG}
+			;;	
+		p)
+			PACKAGING=${OPTARG}
+			;;
+		esac
+done
+shift $((OPTIND-1))
+
+
+if [ -z "$WEBAPP_NAME" ]; 
+then { echo "Must specify a webapp name with -w option"; exit 1; } 
+fi
+
+if [ -z "$RESOURCE_GROUP" ]; 
+then { echo "Must specify a resource group with -r option"; exit 1; } 
+fi
+
+if [ -z "$URL" ]; 
+then { echo "Must specify a URL for downloading artifact with -u option"; exit 1; } 
+fi
+
+
+echo "get FTP user name"
+APP_USER_NAME="`az webapp deployment list-publishing-profiles --name ${WEBAPP_NAME} --resource-group ${RESOURCE_GROUP} --query [1].userName -o tsv`"
+echo "FTP user name : $APP_USER_NAME"
+
+echo "get FTP password"
+APP_USER_PWD="`az webapp deployment list-publishing-profiles --name ${WEBAPP_NAME} --resource-group ${RESOURCE_GROUP} --query [1].userPWD -o tsv`"
+echo "FTP password saved"
+
+echo "get FTP URL"
+APP_PUBLISH_URL="`az webapp deployment list-publishing-profiles --name ${WEBAPP_NAME} --resource-group ${RESOURCE_GROUP} --query [1].publishUrl -o tsv`"
+echo "FTP URL : $APP_PUBLISH_URL"
+
+echo "Stop webapp $WEBAPP_NAME in resource group $RESOURCE_GROUP"
+az webapp stop -n $WEBAPP_NAME -g $RESOURCE_GROUP
+
+echo "download archive from $URL"
+wget -O $WEBAPP_NAME.$PACKAGING --no-cookies --no-check-certificate "$URL"
+
+echo "upload archive to Azure"
+curl -v -T $WEBAPP_NAME.$PACKAGING --user $APP_USER_NAME:$APP_USER_PWD $APP_PUBLISH_URL/webapps/$WEBAPP_NAME.$PACKAGING
+
+echo "Start webapp $WEBAPP_NAME in resource group $RESOURCE_GROUP"
+az webapp start -n $WEBAPP_NAME -g $RESOURCE_GROUP
+
+echo "Check webapp correctly started"
+curl http://$WEBAPP_NAME.azurewebsites.net/$WEBAPP_NAME/
